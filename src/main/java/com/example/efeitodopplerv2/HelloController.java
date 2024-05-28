@@ -26,6 +26,9 @@ public class HelloController {
         String usuario = txtFieldUsuario.getText();
         String senha = txtFieldSenha.getText();
 
+        // Log para verificar os valores de usuario e senha
+        System.out.println("Tentando fazer login com usuario: " + usuario + " e senha: " + senha);
+
         if (CadastroController.validarLogin(usuario, senha)) {
             errorLabel.setText("");
             abrirMenu();
