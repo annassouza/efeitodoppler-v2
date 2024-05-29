@@ -7,7 +7,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
-
+//teste
 public class SimuladorCalculos {
     private double distanciaInicialX;
     private double distanciaY = 3; // Distância fixa no eixo Y
