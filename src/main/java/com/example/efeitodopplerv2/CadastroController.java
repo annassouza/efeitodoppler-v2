@@ -9,10 +9,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
 import java.io.IOException;
-import java.sql.CallableStatement;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 
 public class CadastroController {
 
@@ -85,7 +82,7 @@ public class CadastroController {
         if (connection != null) {
             try {
                 // Chama a procedure SP_VALIDACAO_LOGIN
-                String sql = "{? = call SP_VALIDACAO_LOGIN(?, ?)}";
+                String sql = "{? = call sp_validar_login(?, ?)}";
                 CallableStatement callableStatement = connection.prepareCall(sql);
 
                 // Configura os parâmetros de entrada e saída
@@ -154,42 +151,106 @@ public class CadastroController {
     }
 
     public static void alterarSenha(String usuario, String novaSenha) {
-        Connection connection = ConexaoBanco.getConnection();
+        Connection connection = null;
+        CallableStatement procuraCodUsuarioStmt = null;
+        PreparedStatement updateSenhaStmt = null;
+        CallableStatement auditoriaStmt = null;
 
-        if (connection != null) {
-            try {
-                // Primeiramente, obter a senha antiga
-                String senhaAntiga = null;
-                String getSenhaSql = "SELECT senha FROM usuarios WHERE ip_login = ?";
-                CallableStatement getSenhaStmt = connection.prepareCall(getSenhaSql);
-                getSenhaStmt.setString(1, usuario);
-                ResultSet rs = getSenhaStmt.executeQuery();
-                if (rs.next()) {
-                    senhaAntiga = rs.getString("senha");
-                }
-
-                // Atualizar a senha do usuário
-                String updateSenhaSql = "UPDATE usuarios SET senha = ? WHERE ip_login = ?";
-                CallableStatement updateSenhaStmt = connection.prepareCall(updateSenhaSql);
-                updateSenhaStmt.setString(1, novaSenha);
-                updateSenhaStmt.setString(2, usuario);
-                updateSenhaStmt.executeUpdate();
-
-                // Registrar a alteração na tabela auditoria_senha
-                if (senhaAntiga != null) {
-                    String auditoriaSql = "{call SP_INSERIR_NA_TABELA_auditoria_senha(?, ?, ?)}";
-                    CallableStatement auditoriaStmt = connection.prepareCall(auditoriaSql);
-                    auditoriaStmt.setString(1, senhaAntiga);
-                    auditoriaStmt.setString(2, novaSenha);
-                    auditoriaStmt.setInt(3, getCodUsuario(usuario));
-                    auditoriaStmt.executeUpdate();
-                }
-
-            } catch (SQLException e) {
-                e.printStackTrace();
-            } finally {
-                ConexaoBanco.closeConnection(connection);
+        try {
+            // Estabelece a conexão com o banco de dados
+            connection = ConexaoBanco.getConnection();
+            if (connection == null) {
+                System.out.println("Não foi possível estabelecer a conexão com o banco de dados.");
+                return;
             }
+
+            // Verifica se o usuário existe e obtém o código do usuário
+            String procuraCodUsuarioSql = "{call SP_PROCURAR_COD_USUARIO(?, ?)}";
+            procuraCodUsuarioStmt = connection.prepareCall(procuraCodUsuarioSql);
+            procuraCodUsuarioStmt.setString(1, usuario);
+            procuraCodUsuarioStmt.registerOutParameter(2, java.sql.Types.INTEGER);
+            procuraCodUsuarioStmt.execute();
+            int codUsuario = procuraCodUsuarioStmt.getInt(2);
+
+            System.out.println("Código do usuário retornado: " + codUsuario);
+
+            if (codUsuario == -1) {
+                // Usuário não encontrado, exibir mensagem de erro
+                System.out.println("Usuário não cadastrado");
+                return;
+            }
+
+            // Obter a senha antiga
+            String senhaAntiga = null;
+            String getSenhaSql = "SELECT senha FROM usuarios WHERE ip_login = ?";
+            PreparedStatement getSenhaStmt = connection.prepareStatement(getSenhaSql);
+            getSenhaStmt.setString(1, usuario);
+            ResultSet rs = getSenhaStmt.executeQuery();
+            if (rs.next()) {
+                senhaAntiga = rs.getString("senha");
+                System.out.println("Senha antiga obtida: " + senhaAntiga);
+            }
+
+            // Verifica se a nova senha é diferente da antiga
+            if (senhaAntiga != null && senhaAntiga.equals(novaSenha)) {
+                System.out.println("Senha igual a antiga. Utilize uma senha diferente.");
+                return;
+            }
+
+            // Atualizar a senha do usuário
+            String updateSenhaSql = "UPDATE usuarios SET senha = ? WHERE ip_login = ?";
+            updateSenhaStmt = connection.prepareStatement(updateSenhaSql);
+            updateSenhaStmt.setString(1, novaSenha);
+            updateSenhaStmt.setString(2, usuario);
+            updateSenhaStmt.executeUpdate();
+            System.out.println("Senha atualizada no banco de dados");
+
+            // Registrar a alteração na tabela auditoria_senha
+            if (senhaAntiga != null) {
+                String auditoriaSql = "{call sp_inserir_na_tabela_auditoria(?, ?, ?)}";
+                auditoriaStmt = connection.prepareCall(auditoriaSql);
+                auditoriaStmt.setString(1, senhaAntiga);
+                auditoriaStmt.setString(2, novaSenha);
+                auditoriaStmt.setInt(3, codUsuario);
+                auditoriaStmt.executeUpdate();
+                System.out.println("Mudança registrada na auditoria_senha");
+            }
+
+            System.out.println("Senha atualizada com sucesso!");
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } finally {
+            // Fechar todos os recursos em ordem reversa de sua abertura
+            if (auditoriaStmt != null) {
+                try {
+                    auditoriaStmt.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (updateSenhaStmt != null) {
+                try {
+                    updateSenhaStmt.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (procuraCodUsuarioStmt != null) {
+                try {
+                    procuraCodUsuarioStmt.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+            System.out.println("Conexão fechada com sucesso");
         }
     }
 
